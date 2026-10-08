@@ -1,0 +1,37 @@
+name: backup-rotate
+
+# Daily 05:30 Berlin: keep the newest 7 panel backups, delete the oldest unlocked ones.
+# Two UTC triggers cover summer/winter time; ops/common.gate() lets only the one in Berlin hour 5 proceed.
+# SAFETY: no pull_request triggers anywhere in this repo's ops workflows, so secrets are never exposed to fork PRs.
+on:
+  schedule:
+    - cron: '30 3 * * *'
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: panel-ops
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    if: github.repository == 'Mart0034/overseer-smp'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-ops.txt
+      - run: pip install -r requirements-ops.txt
+      - name: Rotate backups
+        env:
+          PTERO_URL: ${{ secrets.PTERO_URL }}
+          PTERO_CLIENT_KEY: ${{ secrets.PTERO_CLIENT_KEY }}
+          DISCORD_WEBHOOK_STAFF: ${{ secrets.DISCORD_WEBHOOK_STAFF }}
+        run: python -m ops.backup_rotate

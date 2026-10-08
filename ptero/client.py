@@ -184,3 +184,18 @@ class Ptero:
             deleted.append(oldest["name"])
             backups = [b for b in backups if b["uuid"] != oldest["uuid"]]
         return deleted
+
+    def trim_backups(self, sid=None, keep=7):
+        """Keep the newest `keep` backups: delete the oldest UNLOCKED ones while there are more. Locked backups are never deleted
+        (they still count toward the total, so a few locked ones can leave more than `keep`). Returns [(name, bytes), ...] deleted."""
+        deleted = []
+        backups = self.all_backups(sid)
+        while len(backups) > keep:
+            candidates = sorted((b for b in backups if not b["is_locked"]), key=lambda b: b["created_at"])
+            if not candidates:
+                break
+            oldest = candidates[0]
+            self.delete_backup(oldest["uuid"], sid)
+            deleted.append((oldest["name"], oldest.get("bytes", 0)))
+            backups = [b for b in backups if b["uuid"] != oldest["uuid"]]
+        return deleted

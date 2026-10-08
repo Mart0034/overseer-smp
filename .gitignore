@@ -17,3 +17,5 @@ clips/
 *.mp4
 # local scratch
 .claude/
+
+health-state.json
