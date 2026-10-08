@@ -52,6 +52,8 @@ def deploy(c, jar, sid):
     if had_old:
         try: c.create_folder("/", BACKUP_DIR, sid)
         except PteroError: pass
+        if c.file_exists("/" + BACKUP_DIR, PLUGIN_JAR, sid):       # keep only the most recent previous jar
+            c.delete_files("/" + BACKUP_DIR, [PLUGIN_JAR], sid)
         c.rename("/plugins", [(PLUGIN_JAR, f"../{BACKUP_DIR}/{PLUGIN_JAR}")], sid)
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d) / PLUGIN_JAR
