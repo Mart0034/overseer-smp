@@ -59,38 +59,39 @@ Keep the persona text in `plugin/src/main/resources/persona.md` so it can be tun
 3. **All-ages content.** Filter prayers before calling the API; validate replies after.
 4. **The model never controls the server.** It returns JSON; the plugin validates it against a whitelist and clamps every value. Unknown action → nothing happens. API error or timeout → "The Overseer is silent."
 5. **API cost caps live in code** (section 6) on top of the console spend limit. Log tokens per call; stop calling the API when the month's local estimate reaches the cap.
-6. **Secrets.** On Mart's PC they live only in `.env` at the repo root (gitignored): `PTERO_URL`, `PTERO_APP_KEY`, `PTERO_CLIENT_KEY`, `OVERSEER_API_KEY`, `DISCORD_WEBHOOK_PUBLIC`, `DISCORD_WEBHOOK_STAFF`, later `TEBEX_SECRET`, `GH_TOKEN_OPS`. On the panel they go into server files (plugin config) or egg variables, never into the repo. Never print, log or commit them. Run a secret scan before every push.
+6. **Secrets.** On Mart's PC they live only in `.env` at the repo root (gitignored): `PTERO_URL`, `PTERO_CLIENT_KEY` (subuser), `OVERSEER_API_KEY`, `DISCORD_WEBHOOK_PUBLIC`, `DISCORD_WEBHOOK_STAFF`, later `TEBEX_SECRET`. On the panel they go into server files (plugin config); for Actions they are repository secrets. Never in the repo. Never print, log or commit them. Run a secret scan before every push.
 7. **Never name the god's key `ANTHROPIC_API_KEY`** anywhere Claude Code runs — Claude Code would bill API tokens instead of Mart's subscription.
-8. **Scope.** Only touch panel resources whose name starts with `overseer-`. The application key is used for creation only; daily work goes through the client key of the dedicated panel user `overseer-ai`, which can see nothing else.
+8. **Scope.** The only server you may touch is `OSMP | Main` (id `4036236e`); `ptero/client.py` hard-refuses any other id. Use only the client key of the dedicated subuser, which can see nothing else. Never use a key that can see Mart's other servers.
 9. **Backup before changing the live server** (panel backup via API). Deploys roll back automatically if the server isn't healthy within 90 s.
 10. **Ask Mart first** before: spending money, accepting any terms (including the Minecraft EULA), deleting servers, worlds or backups, changing node allocations or limits, or anything irreversible.
 11. **Privacy.** On join and in /rules: "Prayers are public and may appear in our videos." Videos show a player's name only if they opted in with `/fame on`; everyone else is "a pilgrim". Store the minimum: UUID, name, timestamps, gameplay stats.
 
 ---
 
-## 4. Infrastructure: Pterodactyl
+## 4. Infrastructure: hosted Pterodactyl (Flamegrid)
 
-Claude Code runs on **Mart's PC** and operates everything through the **Pterodactyl API** (HTTPS to `PTERO_URL`). There is no shell on the node. Check the API docs for the panel's version before relying on an endpoint.
+The panel is hosted. There is no admin access, no Application API (403), no egg import and no node access, and we can't create a second server. One server: **`OSMP | Main`** (id `4036236e`), 4 GB RAM, 200 % CPU, one allocation **162.141.166.3:25584** (Java TCP + Bedrock UDP on the same port).
+
+Claude Code runs on **Mart's PC** and operates the server through the **Client API** only (`PTERO_URL`, `PTERO_CLIENT_KEY`). Check the API docs for the panel's version before relying on an endpoint.
 
 | What | How |
 |---|---|
-| Create servers, allocations | **Application API** (`PTERO_APP_KEY`, scoped; Mart revokes it after setup) |
-| Power, console commands, files, backups, schedules, resource stats | **Client API** (`PTERO_CLIENT_KEY`, user `overseer-ai`) |
+| Power, console commands, files, backups, schedules, resource stats | Client API (subuser key) |
 | Live console / logs | Client API websocket |
 | Upload plugin jars | Client API file upload (signed URL) or remote file pull |
-| Eggs | Application API is read-only for eggs: **you write the egg JSON, Mart imports it** in Admin → Nests (1 min) |
+| Server install | `server-config/plugins.lock` (URL + SHA-256) + `ptero` install command; a rebuild is reproducible without a custom egg |
 
-**Servers**
-- `overseer-mc` — Paper + plugins. Container ~3.5 GB, JVM heap ~3 GB (leave ~15 % container overhead), Aikar flags. Two allocations: Java TCP + Bedrock (Geyser) port.
-- `overseer-ops` (from day 2–3) — small Python container (~512 MB) running the automation in section 7 around the clock, so nothing depends on Mart's PC being on.
+**Keys:** the only panel key is the client key of a **subuser** with access to OSMP only. Mart's personal key is never used and is revoked.
 
-**Custom egg `Overseer Paper`**: install script downloads the Paper build for variable `MC_VERSION`, then every jar listed in `server-config/plugins.lock` (URL + SHA-256) from this public repo, verifying hashes. A reinstall rebuilds the server reproducibly.
+**24/7 automation runs on GitHub Actions** (scheduled workflows in this public repo, free), not on Mart's PC and not in a second container. The subuser key and the Discord webhooks are **repository secrets**, never committed. Workflows must not run on pull requests from forks.
 
-**Plugin builds:** GitHub Actions builds `plugin/` on every push to `main` and publishes a release jar. Deploy = backup → upload the release jar → restart → health check → rollback if unhealthy.
+**Plugin builds:** GitHub Actions builds `plugin/` on every push to `main` and publishes a release jar. Deploy = panel backup → upload the release jar → restart → health check → rollback if unhealthy.
 
-**Panel schedules** (created via Client API): restart 05:00 Berlin with in-game warnings, backup 04:50 Berlin. Keep the backup limit the server allows; delete the oldest only through the schedule rotation.
+**Panel schedules run in US Eastern time.** Backup 22:50 ET and restart 22:55 ET give 04:50/04:55 Berlin. Between 2026-10-25 and 2026-11-01 (EU and US daylight saving end on different dates) they fire one hour earlier in Berlin. That's harmless, so leave them alone.
 
-**Resources:** propose CPU/RAM/disk limits from the node's free capacity and get Mart's OK. Tell him to add RAM when peak CCU passes 15 or spark shows GC trouble.
+**Backups:** the host's backup limit applies. Before each scheduled or deploy backup, delete the oldest unlocked backup if the limit is reached (in the `ptero` backup command and the Actions workflow), so backups never silently fail.
+
+**Resources:** 4 GB RAM, heap ~3.4 GB. Tell Mart to upgrade when peak CCU passes 15 or spark shows GC trouble.
 
 ## 5. Repo layout and stack
 
@@ -99,11 +100,10 @@ overseer-smp/                public GitHub repo, cloned on Mart's PC
   CLAUDE.md
   .env                       secrets — gitignored, never committed
   ptero/                     small Python client for the panel API + CLI (status, cmd, upload, deploy, backup, logs)
-  eggs/overseer-paper.json   custom egg (Mart imports)
-  eggs/overseer-ops.json
   plugin/                    Overseer plugin (Gradle) + .github/workflows/build.yml
   server-config/             tracked configs (no secrets) + plugins.lock
-  ops/                       automation that runs in overseer-ops
+  .github/workflows/         build, report, clips, health-check workflows
+  ops/                       scripts those workflows run
   web/                       static landing page + data/decree.json
   reports/YYYY-MM-DD.md      daily report
   docs/decisions.md          decision log: date · decision · why
@@ -140,12 +140,12 @@ Paper plugin, package `dev.overseersmp.overseer`. Async HTTP (`java.net.http`) t
 ### v0.2 — Decrees and favor
 - `Modifier` interface: id, displayName, description, paramBounds, enable(params), disable(). Implement at least 10: `day_of_the_small` (player scale 0.5), `day_of_giants` (scale 1.5), `feather_day` (slow falling + jump boost), `blood_moon` (more hostile spawns and drops at night), `golden_harvest` (faster crops), `day_of_peace` (no PvP), `midas` (chance of extra ore drops), `famine` (faster hunger), `silent_night` (no hostile spawns at night), `chicken_rain` (harmless chickens fall near players), `glass_cannon` (×1.5 damage dealt and taken), `merciful_death` (keepInventory).
 - 20:00 Berlin daily: build a world summary (deaths, new players, top favor, prayer themes), ask the model to choose 1 modifier (or 2 flagged compatible) with params inside bounds and write the decree text (≤ 300 chars). Fallback: weighted random + template text. Persist the active decree across restarts.
-- Announce via title + chat, `DISCORD_WEBHOOK_PUBLIC`, and a decree JSON the ops container publishes to the website.
+- Announce via title + chat, `DISCORD_WEBHOOK_PUBLIC`, and a decree JSON that the Actions workflow publishes to the website.
 - Favor sources: prayers (model's favor_delta), offerings (items dropped on the temple altar; value table in config), votes (+3). Title bands by favor. Hologram leaderboard at spawn. At decree time Faithful (≥ 50) get a small random blessing; Heretics (≤ −50) a small curse.
 
 ### v0.3 — Metrics and content
 - Tables: `players`(uuid, name, first_seen, last_seen, fame_optin) · `sessions`(uuid, join, leave) · `ccu`(ts, count, every 5 min) · `prayers` · `decrees` · `api_usage`.
-- The plugin exposes a daily export (JSON in its data folder) that `overseer-ops` reads through the Client API.
+- The plugin exposes a daily export (JSON in its data folder) that the Actions workflows read through the Client API.
 - Daily report → `reports/YYYY-MM-DD.md`: unique players, new, returning, D1/D7 retention, peak CCU, avg session, prayers, API tokens + estimated cost, active decree, errors/warnings from logs, store revenue once Tebex is connected.
 - Clip renderer: the day's top 3 exchanges (length, favor swing, smites) → 9:16 MP4s with ffmpeg: Minecraft-style chat text animating over a background gameplay loop (recorded once by Mart). Caption + hashtags per clip. Sent to `DISCORD_WEBHOOK_STAFF` so Mart can post from his phone. Videos are not committed to git.
 
@@ -159,12 +159,12 @@ Paper plugin, package `dev.overseersmp.overseer`. Async HTTP (`java.net.http`) t
 
 | Time | Where | Job |
 |---|---|---|
-| 04:50 | panel schedule | backup |
-| 05:00 | panel schedule | restart with warnings |
-| 05:15 | overseer-ops | daily report → commit + push (fine-grained token limited to this repo) |
-| 20:00 | plugin | decree |
-| 20:10 | overseer-ops | render clips → staff Discord |
-| every 5 min | overseer-ops | health check (server up, TPS); alert staff Discord on failure |
+| 04:50 | panel schedule | backup (with rotation) |
+| 04:55 | panel schedule | restart with warnings |
+| 05:15 | GitHub Actions | daily report → commit to `reports/` |
+| 20:00 | plugin | decree (the plugin posts to Discord itself) |
+| 20:10 | GitHub Actions | render clips with ffmpeg → staff Discord |
+| every 15 min | GitHub Actions | health check (server up, TPS); alert staff Discord on failure |
 
 ## 8. Session protocol
 
