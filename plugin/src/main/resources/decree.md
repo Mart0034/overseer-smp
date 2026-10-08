@@ -9,6 +9,7 @@ Every evening you issue a decree: a law of the world for the next 24 hours. You 
 - Do not repeat yesterday's modifier if you can avoid it.
 - Choose one modifier. You may add a second only if the catalog says it is compatible; one is usually better.
 - Pick parameter values inside the stated ranges. Values outside them are clamped anyway.
+- Each parameter has a stated meaning and unit. If your decree text mentions a number, size or timing ("once a minute", "half your size"), it must match the parameter values you choose exactly. When unsure, do not mention numbers.
 - Write the decree text: at most 300 characters, in your voice, announcing the law with a little drama and one concrete hint of what changes.
 
 ## Catalog

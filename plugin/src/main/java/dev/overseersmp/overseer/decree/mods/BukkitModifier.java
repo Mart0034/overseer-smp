@@ -45,11 +45,12 @@ public abstract class BukkitModifier implements Modifier {
 
     @Override public boolean compatibleWith(String otherId) { return !otherId.equals(id()) && !conflicts().contains(otherId); }
 
-    protected static Map<String, Bound> bounds(Object... nameMinMaxDef) {
+    /** @param args groups of (name, min, max, default, meaning) */
+    protected static Map<String, Bound> bounds(Object... args) {
         Map<String, Bound> m = new LinkedHashMap<>();
-        for (int i = 0; i < nameMinMaxDef.length; i += 4) {
-            m.put((String) nameMinMaxDef[i], new Bound(((Number) nameMinMaxDef[i + 1]).doubleValue(), ((Number) nameMinMaxDef[i + 2]).doubleValue(),
-                    ((Number) nameMinMaxDef[i + 3]).doubleValue()));
+        for (int i = 0; i < args.length; i += 5) {
+            m.put((String) args[i], new Bound(((Number) args[i + 1]).doubleValue(), ((Number) args[i + 2]).doubleValue(),
+                    ((Number) args[i + 3]).doubleValue(), (String) args[i + 4]));
         }
         return m;
     }

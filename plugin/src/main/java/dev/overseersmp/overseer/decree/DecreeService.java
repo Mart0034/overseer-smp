@@ -77,7 +77,7 @@ public final class DecreeService {
     public void reloadPrompt() {
         try {
             var f = plugin.getDataFolder().toPath().resolve("decree.md");
-            if (!Files.exists(f)) plugin.saveResource("decree.md", false);
+            if (!Files.exists(f)) plugin.saveResource("decree.md", false);   // only when missing: no "already exists" warning
             systemPrompt = Files.readString(f, StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
             plugin.getLogger().warning("Could not read decree.md: " + e.getMessage());
@@ -151,6 +151,7 @@ public final class DecreeService {
                         ActiveDecree d = engine.activate(c.selected(), c.text(), c.source(), scheduled);
                         lastId = d.selected().get(0).id();
                         announce(d);
+                        if (scheduled) plugin.getLogger().info("[decree] favor gifts given: " + plugin.favor().decreeGifts());
                         io.execute(() -> log(d, fin, fout));
                         feedback.accept("Decree enacted (" + c.source() + "): " + describeActive());
                     }
@@ -171,7 +172,8 @@ public final class DecreeService {
             sb.append("- ").append(m.id()).append(" (").append(m.displayName()).append("): ").append(m.description());
             if (!m.bounds().isEmpty()) {
                 sb.append(" Parameters: ");
-                m.bounds().forEach((k, b) -> sb.append(k).append(" in [").append(b.min()).append(", ").append(b.max()).append("], default ").append(b.def()).append("; "));
+                m.bounds().forEach((k, b) -> sb.append(k).append(" in [").append(b.min()).append(", ").append(b.max()).append("], default ").append(b.def())
+                        .append(b.meaning().isEmpty() ? "" : " (" + b.meaning() + ")").append("; "));
             }
             List<String> compat = registry.keySet().stream().filter(o -> !o.equals(m.id()) && m.compatibleWith(o) && registry.get(o).compatibleWith(m.id())).toList();
             sb.append(compat.isEmpty() ? "Compatible with: none." : " Compatible with: " + String.join(", ", compat) + ".").append('\n');

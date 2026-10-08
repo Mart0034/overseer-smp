@@ -12,7 +12,9 @@ import java.util.Map;
  */
 public interface Modifier {
     /** Parameter bound: clamp(min, max) with a default for missing or invalid values. */
-    record Bound(double min, double max, double def) {
+    record Bound(double min, double max, double def, String meaning) {
+        public Bound(double min, double max, double def) { this(min, max, def, ""); }
+
         public double clamp(Object v) {
             double d = v instanceof Number n ? n.doubleValue() : def;
             if (Double.isNaN(d) || Double.isInfinite(d)) d = def;

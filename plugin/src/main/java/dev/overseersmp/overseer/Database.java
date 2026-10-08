@@ -162,6 +162,38 @@ public final class Database implements AutoCloseable {
         return out;
     }
 
+    public synchronized void setFame(UUID uuid, boolean optIn) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("UPDATE players SET fame_optin=? WHERE uuid=?")) {
+            p.setInt(1, optIn ? 1 : 0); p.setString(2, uuid.toString());
+            p.executeUpdate();
+        }
+    }
+
+    public synchronized boolean fame(UUID uuid) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("SELECT fame_optin FROM players WHERE uuid=?")) {
+            p.setString(1, uuid.toString());
+            try (ResultSet r = p.executeQuery()) { return r.next() && r.getInt(1) == 1; }
+        }
+    }
+
+    /** {name, favor} for a player by name (case-insensitive), or null if unknown. */
+    public synchronized Object[] favorByName(String name) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("SELECT name, favor FROM players WHERE name=? COLLATE NOCASE")) {
+            p.setString(1, name);
+            try (ResultSet r = p.executeQuery()) { return r.next() ? new Object[] {r.getString(1), r.getInt(2)} : null; }
+        }
+    }
+
+    /** Top n players by favor as {name, favor} pairs (players at 0 are not ranked). */
+    public synchronized List<Object[]> topFavorRows(int n) throws SQLException {
+        List<Object[]> out = new ArrayList<>();
+        try (PreparedStatement p = c.prepareStatement("SELECT name, favor FROM players WHERE favor<>0 ORDER BY favor DESC, last_seen DESC LIMIT ?")) {
+            p.setInt(1, n);
+            try (ResultSet r = p.executeQuery()) { while (r.next()) out.add(new Object[] {r.getString(1), r.getInt(2)}); }
+        }
+        return out;
+    }
+
     @Override public synchronized void close() {
         try { c.close(); } catch (SQLException ignored) { /* shutting down */ }
     }

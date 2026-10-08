@@ -17,7 +17,7 @@ public final class FeatherDayModifier extends BukkitModifier {
     @Override public String id() { return "feather_day"; }
     @Override public String displayName() { return "Feather Day"; }
     @Override public String description() { return "Gravity forgets you: you fall slowly and leap higher."; }
-    @Override public Map<String, Bound> bounds() { return bounds("jump_level", 0, 1, 0); }
+    @Override public Map<String, Bound> bounds() { return bounds("jump_level", 0, 1, 0, "0 = Jump Boost I, 1 = Jump Boost II"); }
 
     @Override protected void onEnable(Map<String, String> state) { for (Player p : Bukkit.getOnlinePlayers()) apply(p); }
 

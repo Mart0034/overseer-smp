@@ -26,6 +26,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import dev.overseersmp.overseer.decree.DecreeService;
+import dev.overseersmp.overseer.favor.FavorService;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class OverseerPlugin extends JavaPlugin implements Listener {
@@ -40,11 +41,12 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     private ExecutorService io;
     private PrayerService prayers;
     private DecreeService decree;
+    private FavorService favor;
     private Path silenceFlag;
 
     @Override public void onEnable() {
         saveDefaultConfig();
-        saveResource("persona.md", false);   // copied once; edit plugins/Overseer/persona.md and /overseer reload to tune
+        if (!Files.exists(getDataFolder().toPath().resolve("persona.md"))) saveResource("persona.md", false);   // copied once; edit plugins/Overseer/persona.md and /overseer reload to tune
         silenceFlag = getDataFolder().toPath().resolve("silenced");
         io = Executors.newSingleThreadExecutor(r -> { Thread t = new Thread(r, "Overseer-IO"); t.setDaemon(true); return t; });
         try {
@@ -60,6 +62,8 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
         seedFromDb();
         prayers = new PrayerService(this, io);
         getServer().getPluginManager().registerEvents(this, this);
+        favor = new FavorService(this, io);
+        favor.start();
         decree = new DecreeService(this, io);
         decree.start();
         getLogger().info("Enabled. model=" + settings.model + ", API key " + (settings.hasKey() ? "configured" : "MISSING (the Overseer will be silent)")
@@ -67,6 +71,7 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     }
 
     @Override public void onDisable() {
+        if (favor != null) favor.stop();
         if (io != null) io.shutdown();
         if (db != null) db.close();
     }
@@ -111,6 +116,7 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     public Database db() { return db; }
     public PrayerLimits limits() { return limits; }
     public CostTracker cost() { return cost; }
+    public FavorService favor() { return favor; }
     public AnthropicClient client() { return client; }
     /** The active decree's text (empty if none), for the prayer prompt. */
     public String decreeText() { return decree == null ? "" : decree.activeText(); }
@@ -121,6 +127,7 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
         long now = System.currentTimeMillis();
         io.execute(() -> { try { db.touchPlayer(p.getUniqueId(), p.getName(), now); } catch (SQLException ex) { getLogger().warning("DB: " + ex.getMessage()); } });
         decree.onJoin(p);
+        favor.load(p.getUniqueId());
         p.sendMessage(Component.text("Pray to the Overseer with /pray <message>. Prayers are public and may appear in our videos.", NamedTextColor.GOLD));
     }
 
@@ -136,6 +143,12 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
             if (!(sender instanceof Player p)) { sender.sendMessage("Only players can pray."); return true; }
             if (args.length == 0) { p.sendMessage(Component.text("Usage: /pray <message>", NamedTextColor.GRAY)); return true; }
             prayers.pray(p, String.join(" ", args));
+            return true;
+        }
+        if (cmd.getName().equalsIgnoreCase("favor")) { favor.favorCommand(sender, args); return true; }
+        if (cmd.getName().equalsIgnoreCase("fame")) {
+            if (!(sender instanceof Player p)) { sender.sendMessage("Only players can use /fame."); return true; }
+            favor.fameCommand(p, args);
             return true;
         }
         return admin(sender, args);

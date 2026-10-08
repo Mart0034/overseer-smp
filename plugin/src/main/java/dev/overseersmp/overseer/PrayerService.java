@@ -102,7 +102,7 @@ public final class PrayerService {
                 return;
             }
             Decision d = r.decision();
-            plugin.db().addFavor(id, d.favorDelta());
+            plugin.favor().update(id, plugin.db().addFavor(id, d.favorDelta()));
             dbLog(new Database.PrayerRow(now, id, name, text, d.reply(), d.action().name().toLowerCase(), d.effectId() == null ? "none" : d.effectId(),
                     d.favorDelta(), reply.inputTokens(), reply.outputTokens(), reply.latencyMs(), "ok", true));
             Bukkit.getScheduler().runTask(plugin, () -> deliver(id, name, d));

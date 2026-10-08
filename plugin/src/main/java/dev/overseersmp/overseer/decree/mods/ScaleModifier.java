@@ -37,7 +37,7 @@ public final class ScaleModifier extends BukkitModifier {
     @Override public String id() { return id; }
     @Override public String displayName() { return name; }
     @Override public String description() { return description; }
-    @Override public Map<String, Bound> bounds() { return bounds("scale", min, max, def); }
+    @Override public Map<String, Bound> bounds() { return bounds("scale", min, max, def, "player size multiplier; 1.0 is normal, 0.5 is half size, 1.5 is one and a half times as tall"); }
     @Override protected Set<String> conflicts() { return Set.of(other); }
 
     @Override protected void onEnable(Map<String, String> state) { for (Player p : Bukkit.getOnlinePlayers()) apply(p); }

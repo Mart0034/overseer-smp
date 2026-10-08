@@ -24,7 +24,7 @@ public final class BloodMoonModifier extends BukkitModifier implements Listener 
     @Override public String id() { return "blood_moon"; }
     @Override public String displayName() { return "Blood Moon"; }
     @Override public String description() { return "At night more monsters rise, and they carry more loot."; }
-    @Override public Map<String, Bound> bounds() { return bounds("spawn_multiplier", 1.0, 2.0, 1.5, "drop_multiplier", 1.0, 2.0, 1.5); }
+    @Override public Map<String, Bound> bounds() { return bounds("spawn_multiplier", 1.0, 2.0, 1.5, "1.5 means about 50% more hostile mobs at night, 2.0 means double", "drop_multiplier", 1.0, 2.0, 1.5, "1.5 means about 50% more loot from night mobs, 2.0 means double"); }
 
     private static boolean night(World w) {
         long t = w.getTime();

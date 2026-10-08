@@ -13,6 +13,14 @@ commands:
     description: Overseer administration.
     usage: /overseer <reload|stats|silence|decree|forcedecree [ids]|cleardecree>
     permission: overseer.admin
+  favor:
+    description: Show your favor (or another pilgrim's).
+    usage: /favor [player]
+    permission: overseer.pray
+  fame:
+    description: Let videos show your name (default: off).
+    usage: /fame on|off
+    permission: overseer.pray
 permissions:
   overseer.pray:
     description: Use /pray

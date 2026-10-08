@@ -35,7 +35,7 @@ public final class ChickenRainModifier extends BukkitModifier {
     @Override public String id() { return "chicken_rain"; }
     @Override public String displayName() { return "Chicken Rain"; }
     @Override public String description() { return "It is raining chickens. They are harmless, and judging you."; }
-    @Override public Map<String, Bound> bounds() { return bounds("interval_seconds", 20, 120, 45); }
+    @Override public Map<String, Bound> bounds() { return bounds("interval_seconds", 20, 120, 45, "seconds between chicken drops (60 means about once a minute; 120 once every two minutes)"); }
 
     @Override protected void onEnable(Map<String, String> state) { sinceLast = 0; sweep(); }
 
