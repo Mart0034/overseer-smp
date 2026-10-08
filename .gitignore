@@ -1,0 +1,19 @@
+# secrets
+.env
+.env.*
+!.env.example
+# build output
+build/
+.gradle/
+out/
+__pycache__/
+*.pyc
+.venv/
+# jars (egg downloads them from plugins.lock; none are committed)
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+# generated media
+clips/
+*.mp4
+# local scratch
+.claude/
