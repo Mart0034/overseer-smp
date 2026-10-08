@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: panel-ops
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:

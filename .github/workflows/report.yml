@@ -13,7 +13,7 @@ permissions:
   contents: write   # commit the report
 
 concurrency:
-  group: panel-ops
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
