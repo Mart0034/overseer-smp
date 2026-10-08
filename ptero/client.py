@@ -41,11 +41,17 @@ class Ptero:
         h = {"Authorization": f"Bearer {key}", "Accept": "Application/vnd.pterodactyl.v1+json"}
         h.update(kw.pop("headers", {}))
         for _ in range(4):
-            r = self.s.request(method, f"{self.base}{path}", headers=h, timeout=60, **kw)
+            try:
+                r = self.s.request(method, f"{self.base}{path}", headers=h, timeout=60, **kw)
+            except requests.ConnectionError:
+                time.sleep(3)
+                continue
             if r.status_code == 429:
                 time.sleep(int(r.headers.get("Retry-After", 2)) + 1)
                 continue
             break
+        else:
+            raise PteroError(f"{method} {path}: network failure after retries")
         if r.status_code >= 400:
             raise PteroError(f"{method} {path} -> {r.status_code}: {r.text[:300]}")
         return r.json() if r.content and "json" in r.headers.get("content-type", "") else r.text

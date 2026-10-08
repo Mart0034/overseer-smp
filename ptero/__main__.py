@@ -1,5 +1,7 @@
 """CLI: python -m ptero <command> [args]   (server defaults to the one in PTERO_URL)"""
-import argparse, json, subprocess, sys, time
+import sys
+for _s in (sys.stdout, sys.stderr): _s.reconfigure(encoding="utf-8", errors="replace")
+import argparse, json, subprocess, time
 from pathlib import Path
 from .client import ALLOWED_SERVERS, Ptero, PteroError, ROOT
 
