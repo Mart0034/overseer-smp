@@ -78,4 +78,27 @@ class DatabaseTest {
         db.logPrayer(row(1, evil, "ok", true));
         assertEquals(java.util.List.of(evil), db.recentPrayers(u, 3));
     }
+
+    @Test void refundedPrayersAreNotCountedAfterARestart() throws Exception {
+        db.logPrayer(row(1000, "ok one", "ok", true));
+        db.logPrayer(row(2000, "api failed", "error:HTTP 529 overloaded_error", false));   // refunded: counted=false
+        db.logPrayer(row(3000, "bad reply", "invalid:unsafe reply", false));              // refunded
+        db.logPrayer(row(4000, "ok two", "ok", true));
+        var last = new HashMap<UUID, Instant>();
+        assertEquals(2, db.countedSince(0, last).get(u), "only the two answered prayers use up slots when counts are restored");
+        assertEquals(Instant.ofEpochMilli(4000), last.get(u));
+    }
+
+    @Test void decreeTablesAndSummaryQueries() throws Exception {
+        db.touchPlayer(u, "Steve", 5000);
+        db.addFavor(u, 7);
+        db.logDeath(u, 6000);
+        db.logDeath(u, 7000);
+        db.logPrayer(row(8000, "a prayer", "ok", true));
+        db.logDecree(9000, "[]", "text", "model", 100, 50);
+        assertEquals(1, db.count("deaths", "ts", 6500));
+        assertEquals(1, db.count("players", "first_seen", 4000));
+        assertEquals(java.util.List.of("Steve (7)"), db.topFavor(3));
+        assertEquals(java.util.List.of("a prayer"), db.prayersSince(0, 5));
+    }
 }

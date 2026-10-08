@@ -12,7 +12,7 @@ anthropic:
   price-per-mtok-output: 0.50
 prayers:
   max-chars: 200
-  per-player-per-day: 3       # +1 per server-list vote (v0.2)
+  per-player-per-day: 5       # +1 per server-list vote (v0.2); a prayer costs ~$0.0002
   cooldown-seconds: 60
   server-per-day: 600
   max-reply-chars: 220
@@ -33,3 +33,10 @@ effects:
     blindness: 5
 filter:
   extra-words: []             # extra blocked words for prayers and replies
+decree:
+  enabled: true
+  hour-berlin: 20             # the daily decree fires from this hour (Europe/Berlin), once per day
+  max-text-chars: 300
+  max-tokens: 300
+discord:
+  public-webhook: ""          # secret; written on the server by `ptero set-key`, never in the repo

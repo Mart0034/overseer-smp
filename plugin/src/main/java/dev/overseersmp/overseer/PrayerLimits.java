@@ -15,6 +15,9 @@ public final class PrayerLimits {
 
     public record Check(Result result, long retrySeconds, int remainingToday) {}
 
+    /** Proof of a consumed prayer; hand it back to {@link #refund} if the prayer produced no answer. */
+    public record Ticket(long id, UUID player, LocalDate day, Instant previousLast) {}
+
     public static final ZoneId ZONE = ZoneId.of("Europe/Berlin");
 
     private final Clock clock;
@@ -23,6 +26,8 @@ public final class PrayerLimits {
     private int global;
     private final Map<UUID, Integer> perPlayer = new HashMap<>();
     private final Map<UUID, Instant> last = new HashMap<>();
+    private long nextTicket;
+    private final java.util.Set<Long> refunded = new java.util.HashSet<>();
 
     public PrayerLimits(Settings settings, Clock clock) {
         this.settings = settings;
@@ -40,6 +45,7 @@ public final class PrayerLimits {
             day = t;
             global = 0;
             perPlayer.clear();
+            refunded.clear();
         }
     }
 
@@ -61,11 +67,23 @@ public final class PrayerLimits {
     }
 
     /** Consume one prayer. Call right before the API request, after a successful {@link #check}. */
-    public synchronized void record(UUID player) {
+    public synchronized Ticket record(UUID player) {
         rollover();
+        Ticket t = new Ticket(++nextTicket, player, day, last.get(player));
         perPlayer.merge(player, 1, Integer::sum);
         global++;
         last.put(player, clock.instant());
+        return t;
+    }
+
+    /** Give the prayer back: the daily counts and the cooldown return to what they were. No-op if the day has rolled over. */
+    public synchronized void refund(Ticket t) {
+        rollover();
+        if (t == null || !t.day().equals(day) || !refunded.add(t.id())) return;   // wrong day, or already refunded
+        perPlayer.computeIfPresent(t.player(), (k, v) -> v <= 1 ? null : v - 1);
+        global = Math.max(0, global - 1);
+        if (t.previousLast() == null) last.remove(t.player());
+        else last.put(t.player(), t.previousLast());
     }
 
     /** Restore today's counts after a restart. */

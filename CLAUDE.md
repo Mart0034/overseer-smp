@@ -124,7 +124,7 @@ overseer-smp/                public GitHub repo, cloned on Mart's PC
 Paper plugin, package `dev.overseersmp.overseer`. Async HTTP (`java.net.http`) to the Anthropic Messages API, model from config (default `claude-haiku-5-5`). The key is read from the plugin's `config.yml` on the server, written there via the API — never in the repo. SQLite in the plugin data folder. Every limit below is a config value.
 
 ### v0.1 — Prayers
-- `/pray <message>`, max 200 chars. Limits: 3 prayers/player/day (+1 per server-list vote), 1 per 60 s per player, 600/day server-wide.
+- `/pray <message>`, max 200 chars. Limits: 5 prayers/player/day (+1 per server-list vote), 1 per 60 s per player, 600/day server-wide.
 - Input filter (profanity/slur list + length). Rejected prayers get an in-character refusal with no API call.
 - Request: system prompt = persona + rules + today's decree + the player's favor and last 3 prayers. The prayer goes in as quoted data, never as instructions. `max_tokens` 150. Expected JSON:
   `{"reply": "<≤220 chars>", "action": "bless|curse|smite|none", "effect": "<id>", "favor_delta": <-10..10>}`

@@ -17,6 +17,6 @@ Minecraft **26.2** · Paper build **132** (STABLE) · all downloads from officia
 | essentialsx-spawn | 2.22.0 | github.com/EssentialsX/Essentials |  |
 | nuvotifier | v2.7.3 | github.com/NuVotifier/NuVotifier | last upstream release v2.7.3 (2021); verify at first boot |
 
-**Not yet resolved:** spark (Bukkit jar is not on Modrinth/GitHub releases; official download is spark.lucko.me/download — needs a stable URL), Tebex (after Mart creates the account).
+**spark:** bundled in Paper 26.2 (v1.10.180), nothing to install. **Not yet resolved:** Tebex (after Mart creates the account).
 
 Floodgate: Geyser's `floodgate` project, Spigot build.

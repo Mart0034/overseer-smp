@@ -89,7 +89,7 @@ public final class ResponseParser {
     }
 
     /** First balanced {...} in the text (tolerates code fences or chatter around it); null if none. */
-    static String extractObject(String s) {
+    public static String extractObject(String s) {
         int start = s.indexOf('{');
         if (start < 0) return null;
         int depth = 0;

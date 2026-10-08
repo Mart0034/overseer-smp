@@ -43,6 +43,8 @@ def deploy(c, jar, sid):
     version = m.group(1) if m else "?"
     subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "secret_scan.py"), "all"], check=True)
     print("backup...")
+    for n in c.rotate_backups(sid):
+        print("rotated out oldest unlocked backup:", n)
     uuid = c.create_backup(f"pre-deploy-{version}-{int(time.time())}", sid)["attributes"]["uuid"]
     if not wait_backup(c, uuid, sid):
         print("backup did not complete; aborting deploy"); return 1
@@ -71,16 +73,8 @@ def deploy(c, jar, sid):
 
 
 def set_key(c, sid):
-    """Write OVERSEER_API_KEY from .env into plugins/Overseer/config.yml on the server. The key is never printed."""
-    key = load_env().get("OVERSEER_API_KEY", "")
-    if len(key) < 20: sys.exit("OVERSEER_API_KEY missing in .env")
-    path = "/plugins/Overseer/config.yml"
-    cfg = c.read_file(path, sid)
-    new, n = re.subn(r'(?m)^(\s*api-key:\s*)"[^"\n]*"', lambda m: m.group(1) + json.dumps(key), cfg, count=1)
-    if n != 1: sys.exit("could not find api-key line in server config")
-    c.write_file(path, new, sid)
-    c.command("overseer reload", sid)
-    print("API key written to the server config and plugin reloaded (value not shown)")
+    from .secrets_cfg import set_secrets
+    set_secrets(c, sid)
 
 
 def show_prayers(c, n, sid):
@@ -106,7 +100,7 @@ def main():
     ap = argparse.ArgumentParser(prog="ptero")
     ap.add_argument("--server", help="server identifier (must be in ALLOWED_SERVERS)")
     sub = ap.add_subparsers(dest="c", required=True)
-    for n in ("whoami", "list", "status", "resources", "backup", "backups", "files", "schedules", "startup"):
+    for n in ("whoami", "list", "status", "resources", "backups", "files", "schedules", "startup"):
         sub.add_parser(n)
     p = sub.add_parser("cmd"); p.add_argument("command", nargs="+")
     p = sub.add_parser("power"); p.add_argument("signal", choices=["start", "stop", "restart", "kill"])
@@ -116,6 +110,7 @@ def main():
     p = sub.add_parser("cat"); p.add_argument("path")
     p = sub.add_parser("put"); p.add_argument("local"); p.add_argument("remote")
     p = sub.add_parser("deploy"); p.add_argument("jar")
+    p = sub.add_parser("backup"); p.add_argument("--keep", type=int, help="max backups to keep (default 7, never above the host limit)")
     sub.add_parser("set-key")
     p = sub.add_parser("prayers"); p.add_argument("n", nargs="?", type=int, default=10)
     a = ap.parse_args()
@@ -150,6 +145,8 @@ def main():
         elif a.c == "schedules": print(json.dumps(c.schedules(sid), indent=1))
         elif a.c == "backups": print(json.dumps(c.backups(sid), indent=1))
         elif a.c == "backup":
+            for n in c.rotate_backups(sid, a.keep):
+                print("rotated out oldest unlocked backup:", n)
             b = c.create_backup(f"manual-{int(time.time())}", sid)
             print("backup started:", b["attributes"]["uuid"])
         elif a.c == "deploy":

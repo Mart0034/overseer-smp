@@ -152,3 +152,35 @@ class Ptero:
         if r.status_code >= 400:
             raise PteroError(f"download failed {r.status_code}")
         return r.content
+
+    # ---- backup rotation
+    BACKUP_KEEP_DEFAULT = 7  # disk guard: the host reports a limit of 999999 but each backup is ~1-6 GB on a 128 GB disk
+
+    def all_backups(self, sid=None):
+        out, page = [], 1
+        while True:
+            r = self.api("GET", sid, "/backups", params={"page": page, "per_page": 50})
+            out += [b["attributes"] for b in r["data"]]
+            if page >= r["meta"]["pagination"]["total_pages"]:
+                return out
+            page += 1
+
+    def delete_backup(self, uuid, sid=None):
+        return self.api("DELETE", sid, f"/backups/{uuid}")
+
+    def rotate_backups(self, sid=None, keep=None):
+        """Make room for one more backup: while count >= min(host limit, keep), delete the oldest UNLOCKED backup.
+        Never deletes locked backups; raises if nothing can be deleted. Returns the deleted backup names."""
+        host = self.details(sid)["feature_limits"].get("backups") or self.BACKUP_KEEP_DEFAULT
+        limit = max(1, min(host, keep or self.BACKUP_KEEP_DEFAULT))
+        deleted = []
+        backups = self.all_backups(sid)
+        while len(backups) >= limit:
+            candidates = sorted((b for b in backups if not b["is_locked"]), key=lambda b: b["created_at"])
+            if not candidates:
+                raise PteroError(f"backup limit {limit} reached and every backup is locked")
+            oldest = candidates[0]
+            self.delete_backup(oldest["uuid"], sid)
+            deleted.append(oldest["name"])
+            backups = [b for b in backups if b["uuid"] != oldest["uuid"]]
+        return deleted

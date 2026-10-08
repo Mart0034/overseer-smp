@@ -29,6 +29,8 @@ public final class Database implements AutoCloseable {
             s.execute("CREATE TABLE IF NOT EXISTS players(uuid TEXT PRIMARY KEY, name TEXT, first_seen INTEGER, last_seen INTEGER, fame_optin INTEGER DEFAULT 0, favor INTEGER DEFAULT 0)");
             s.execute("CREATE TABLE IF NOT EXISTS prayers(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, uuid TEXT, name TEXT, prayer TEXT, reply TEXT, action TEXT, effect TEXT, favor_delta INTEGER, input_tokens INTEGER, output_tokens INTEGER, latency_ms INTEGER, status TEXT, counted INTEGER)");
             s.execute("CREATE INDEX IF NOT EXISTS prayers_uuid_ts ON prayers(uuid, ts)");
+            s.execute("CREATE TABLE IF NOT EXISTS deaths(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, uuid TEXT)");
+            s.execute("CREATE TABLE IF NOT EXISTS decrees(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, modifiers TEXT, text TEXT, source TEXT, input_tokens INTEGER, output_tokens INTEGER)");
             s.execute("CREATE TABLE IF NOT EXISTS api_usage(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, uuid TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, cost_usd REAL)");
         }
     }
@@ -116,6 +118,48 @@ public final class Database implements AutoCloseable {
             p.setLong(1, sinceMs);
             try (ResultSet r = p.executeQuery()) { r.next(); return new long[] {r.getLong(1), r.getLong(2), r.getLong(3), r.getLong(4)}; }
         }
+    }
+
+    public synchronized void logDeath(UUID uuid, long ts) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("INSERT INTO deaths(ts,uuid) VALUES(?,?)")) {
+            p.setLong(1, ts); p.setString(2, uuid.toString());
+            p.executeUpdate();
+        }
+    }
+
+    public synchronized void logDecree(long ts, String modifiers, String text, String source, int in, int out) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("INSERT INTO decrees(ts,modifiers,text,source,input_tokens,output_tokens) VALUES(?,?,?,?,?,?)")) {
+            p.setLong(1, ts); p.setString(2, modifiers); p.setString(3, text); p.setString(4, source); p.setInt(5, in); p.setInt(6, out);
+            p.executeUpdate();
+        }
+    }
+
+    public synchronized int count(String table, String where, long sinceMs) throws SQLException {
+        // table/where are internal constants, never user input
+        try (PreparedStatement p = c.prepareStatement("SELECT COUNT(*) FROM " + table + " WHERE " + where + ">=?")) {
+            p.setLong(1, sinceMs);
+            try (ResultSet r = p.executeQuery()) { return r.next() ? r.getInt(1) : 0; }
+        }
+    }
+
+    /** "name (favor)" for the top n players by favor, highest first. */
+    public synchronized List<String> topFavor(int n) throws SQLException {
+        List<String> out = new ArrayList<>();
+        try (PreparedStatement p = c.prepareStatement("SELECT name, favor FROM players WHERE favor<>0 ORDER BY favor DESC LIMIT ?")) {
+            p.setInt(1, n);
+            try (ResultSet r = p.executeQuery()) { while (r.next()) out.add(r.getString(1) + " (" + r.getInt(2) + ")"); }
+        }
+        return out;
+    }
+
+    /** Prayers answered since the instant (newest last), for decree themes. */
+    public synchronized List<String> prayersSince(long sinceMs, int limit) throws SQLException {
+        List<String> out = new ArrayList<>();
+        try (PreparedStatement p = c.prepareStatement("SELECT prayer FROM prayers WHERE status='ok' AND ts>=? ORDER BY id DESC LIMIT ?")) {
+            p.setLong(1, sinceMs); p.setInt(2, limit);
+            try (ResultSet r = p.executeQuery()) { while (r.next()) out.add(0, r.getString(1)); }
+        }
+        return out;
     }
 
     @Override public synchronized void close() {

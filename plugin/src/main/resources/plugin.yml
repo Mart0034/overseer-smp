@@ -11,7 +11,7 @@ commands:
     permission: overseer.pray
   overseer:
     description: Overseer administration.
-    usage: /overseer <reload|stats|silence|forcedecree>
+    usage: /overseer <reload|stats|silence|decree|forcedecree [ids]|cleardecree>
     permission: overseer.admin
 permissions:
   overseer.pray:

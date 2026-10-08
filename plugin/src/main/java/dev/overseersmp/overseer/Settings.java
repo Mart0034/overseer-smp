@@ -9,15 +9,21 @@ import java.util.Map;
 public final class Settings {
     public final String model, apiUrl, apiVersion;
     public final int maxTokens, timeoutSeconds;
-    public final boolean structuredOutput, silenced;
+    public final boolean structuredOutput, silenced, decreeEnabled;
+    public final int decreeHour, decreeMaxTextChars, decreeMaxTokens;
     public final double monthlyCapUsd, priceInPerMtok, priceOutPerMtok;
     public final int maxPrayerChars, perPlayerPerDay, cooldownSeconds, serverPerDay, maxReplyChars, history;
     public final Map<String, Integer> durations;
     public final List<String> extraWords;
-    private final String apiKey;
+    private final String apiKey, webhook;
 
     private Settings(Map<String, Object> m) {
         this.apiKey = str(m, "anthropic.api-key", "");
+        this.webhook = str(m, "discord.public-webhook", "");
+        this.decreeEnabled = bool(m, "decree.enabled", true);
+        this.decreeHour = (int) num(m, "decree.hour-berlin", 20, 0, 23);
+        this.decreeMaxTextChars = (int) num(m, "decree.max-text-chars", 300, 40, 600);
+        this.decreeMaxTokens = (int) num(m, "decree.max-tokens", 300, 64, 1000);
         this.model = str(m, "anthropic.model", "claude-haiku-5-5");
         this.apiUrl = str(m, "anthropic.api-url", "https://api.anthropic.com/v1/messages");
         this.apiVersion = str(m, "anthropic.version", "2023-06-01");
@@ -28,7 +34,7 @@ public final class Settings {
         this.priceInPerMtok = num(m, "anthropic.price-per-mtok-input", 0.10, 0, 1000);
         this.priceOutPerMtok = num(m, "anthropic.price-per-mtok-output", 0.50, 0, 1000);
         this.maxPrayerChars = (int) num(m, "prayers.max-chars", 200, 1, 1000);
-        this.perPlayerPerDay = (int) num(m, "prayers.per-player-per-day", 3, 0, 1000);
+        this.perPlayerPerDay = (int) num(m, "prayers.per-player-per-day", 5, 0, 1000);
         this.cooldownSeconds = (int) num(m, "prayers.cooldown-seconds", 60, 0, 86400);
         this.serverPerDay = (int) num(m, "prayers.server-per-day", 600, 0, 100000);
         this.maxReplyChars = (int) num(m, "prayers.max-reply-chars", 220, 20, 500);
@@ -53,6 +59,9 @@ public final class Settings {
     public static Settings with(Map<String, Object> overrides) { return new Settings(overrides); }
 
     public String apiKey() { return apiKey; }
+
+    /** Discord webhook URL (a secret: never logged, never in toString). */
+    public String webhook() { return webhook; }
 
     public boolean hasKey() { return apiKey != null && apiKey.length() >= 20; }
 

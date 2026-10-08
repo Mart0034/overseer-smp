@@ -25,6 +25,11 @@ public final class AnthropicClient {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     public CompletableFuture<Reply> complete(Settings s, String system, String user) {
+        return complete(s, s.maxTokens, system, user, s.structuredOutput ? schema() : null);
+    }
+
+    /** @param format an output_config.format object (json_schema), or null for free text */
+    public CompletableFuture<Reply> complete(Settings s, int maxTokens, String system, String user, JsonObject format) {
         if (!s.hasKey()) return CompletableFuture.failedFuture(new ApiException("no api key configured"));
         long t0 = System.nanoTime();
         HttpRequest req = HttpRequest.newBuilder(URI.create(s.apiUrl))
@@ -32,7 +37,7 @@ public final class AnthropicClient {
                 .header("x-api-key", s.apiKey())
                 .header("anthropic-version", s.apiVersion)
                 .header("content-type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(buildBody(s, system, user)))
+                .POST(HttpRequest.BodyPublishers.ofString(buildBody(s, maxTokens, system, user, format)))
                 .build();
         return http.sendAsync(req, HttpResponse.BodyHandlers.ofString())
                 .handle((resp, err) -> {
@@ -42,16 +47,20 @@ public final class AnthropicClient {
     }
 
     static String buildBody(Settings s, String system, String user) {
+        return buildBody(s, s.maxTokens, system, user, s.structuredOutput ? schema() : null);
+    }
+
+    static String buildBody(Settings s, int maxTokens, String system, String user, JsonObject format) {
         JsonObject b = new JsonObject();
         b.addProperty("model", s.model);
-        b.addProperty("max_tokens", s.maxTokens);
+        b.addProperty("max_tokens", maxTokens);
         b.addProperty("system", system);
         JsonObject th = new JsonObject();
         th.addProperty("type", "disabled");   // short replies: thinking would eat the 150-token cap
         b.add("thinking", th);
         JsonObject oc = new JsonObject();
         oc.addProperty("effort", "low");
-        if (s.structuredOutput) oc.add("format", schema());
+        if (format != null) oc.add("format", format);
         b.add("output_config", oc);
         JsonArray msgs = new JsonArray();
         JsonObject m = new JsonObject();
@@ -62,7 +71,7 @@ public final class AnthropicClient {
         return GSON.toJson(b);
     }
 
-    private static JsonObject schema() {
+    static JsonObject schema() {
         JsonObject props = new JsonObject();
         props.add("reply", type("string"));
         JsonObject action = type("string");

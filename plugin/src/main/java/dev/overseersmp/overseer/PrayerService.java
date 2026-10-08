@@ -15,6 +15,7 @@ import org.bukkit.entity.Player;
 /** The prayer pipeline: filter -> limits -> budget -> (async) prompt + API call -> validate -> log -> (main thread) broadcast + effect. */
 public final class PrayerService {
     static final String SILENT = "The Overseer is silent.";
+    static final String SILENT_REFUND = "The Overseer is silent. Your prayer was not spent.";
 
     private final OverseerPlugin plugin;
     private final ExecutorService io;
@@ -59,34 +60,35 @@ public final class PrayerService {
             log(p, text, null, null, null, 0, 0, 0, 0, "budget", false);
             return;
         }
-        plugin.limits().record(id);
+        PrayerLimits.Ticket ticket = plugin.limits().record(id);
         tell(p, "You raise your voice to the heavens...", NamedTextColor.DARK_GRAY);
         String name = p.getName();
-        io.execute(() -> runAsync(id, name, text, s));
+        io.execute(() -> runAsync(id, name, text, s, ticket));
     }
 
     /** I/O thread: read context, call the API, validate, log, then hand the result to the main thread. */
-    private void runAsync(UUID id, String name, String text, Settings s) {
+    private void runAsync(UUID id, String name, String text, Settings s, PrayerLimits.Ticket ticket) {
         long t0 = System.currentTimeMillis();
         try {
             int favor = plugin.db().favor(id);
             List<String> recent = plugin.db().recentPrayers(id, s.history);
             String system = PromptBuilder.system(plugin.persona(), plugin.decreeText(), favor, recent);
             String user = PromptBuilder.user(name, text);
-            plugin.client().complete(s, system, user).whenCompleteAsync((reply, err) -> finish(id, name, text, s, t0, reply, err), io);
+            plugin.client().complete(s, system, user).whenCompleteAsync((reply, err) -> finish(id, name, text, s, t0, reply, err, ticket), io);
         } catch (SQLException | RuntimeException e) {
-            finish(id, name, text, s, t0, null, e);
+            finish(id, name, text, s, t0, null, e, ticket);
         }
     }
 
-    private void finish(UUID id, String name, String text, Settings s, long t0, AnthropicClient.Reply reply, Throwable err) {
+    private void finish(UUID id, String name, String text, Settings s, long t0, AnthropicClient.Reply reply, Throwable err, PrayerLimits.Ticket ticket) {
         long now = System.currentTimeMillis();
         try {
             if (err != null || reply == null) {
                 String why = err == null ? "no reply" : (err instanceof java.util.concurrent.CompletionException && err.getCause() != null ? err.getCause() : err).getMessage();
                 plugin.getLogger().warning("Prayer API failure: " + why);
-                dbLog(new Database.PrayerRow(now, id, name, text, null, null, null, 0, 0, 0, now - t0, "error:" + clip(why), true));
-                toPlayer(id, SILENT);
+                plugin.limits().refund(ticket);
+                dbLog(new Database.PrayerRow(now, id, name, text, null, null, null, 0, 0, 0, now - t0, "error:" + clip(why), false));
+                toPlayer(id, SILENT_REFUND);
                 return;
             }
             double cost = plugin.cost().add(reply.inputTokens(), reply.outputTokens());
@@ -94,8 +96,9 @@ public final class PrayerService {
             ResponseParser.Result r = new ResponseParser(s, plugin.contentFilter()).parse(reply.text());
             if (!r.ok()) {
                 plugin.getLogger().warning("Rejected model reply: " + r.problem());
-                dbLog(new Database.PrayerRow(now, id, name, text, clip(reply.text()), null, null, 0, reply.inputTokens(), reply.outputTokens(), reply.latencyMs(), "invalid:" + r.problem(), true));
-                toPlayer(id, SILENT);
+                plugin.limits().refund(ticket);
+                dbLog(new Database.PrayerRow(now, id, name, text, clip(reply.text()), null, null, 0, reply.inputTokens(), reply.outputTokens(), reply.latencyMs(), "invalid:" + r.problem(), false));
+                toPlayer(id, SILENT_REFUND);
                 return;
             }
             Decision d = r.decision();
@@ -105,7 +108,8 @@ public final class PrayerService {
             Bukkit.getScheduler().runTask(plugin, () -> deliver(id, name, d));
         } catch (SQLException | RuntimeException e) {
             plugin.getLogger().warning("Prayer handling failed: " + e.getClass().getSimpleName());
-            toPlayer(id, SILENT);
+            plugin.limits().refund(ticket);
+            toPlayer(id, SILENT_REFUND);
         }
     }
 

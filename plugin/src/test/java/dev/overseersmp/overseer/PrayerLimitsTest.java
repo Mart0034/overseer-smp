@@ -29,7 +29,12 @@ class PrayerLimitsTest {
 
     private final UUID alice = UUID.randomUUID(), bob = UUID.randomUUID();
 
-    private PrayerLimits limits(TestClock c, Map<String, Object> o) { return new PrayerLimits(Settings.with(o), c); }
+    /** Tests that are about the cap use 3/day unless they say otherwise; the shipped default (5) has its own test. */
+    private PrayerLimits limits(TestClock c, Map<String, Object> o) {
+        var m = new java.util.HashMap<String, Object>(Map.of("prayers.per-player-per-day", 3));
+        m.putAll(o);
+        return new PrayerLimits(Settings.with(m), c);
+    }
 
     @Test void threePrayersPerDayThenBlocked() {
         var c = new TestClock(berlin(2026, 10, 8, 12, 0));
@@ -131,5 +136,93 @@ class PrayerLimitsTest {
         for (int i = 0; i < 3; i++) l.record(alice);
         l.updateSettings(Settings.with(Map.of("prayers.cooldown-seconds", 0, "prayers.per-player-per-day", 5)));
         assertEquals(PrayerLimits.Result.OK, l.check(alice, 0).result());
+    }
+
+    // ================= refunds (a failed or rejected prayer must not cost the player a slot) =================
+
+    @Test void shippedDefaultIsFivePrayersPerDay() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = new PrayerLimits(Settings.defaults(), c);
+        for (int i = 0; i < 5; i++) {
+            c.advance(Duration.ofSeconds(61));
+            assertEquals(PrayerLimits.Result.OK, l.check(alice, 0).result(), "prayer " + (i + 1));
+            l.record(alice);
+        }
+        c.advance(Duration.ofSeconds(61));
+        assertEquals(PrayerLimits.Result.DAILY_PLAYER, l.check(alice, 0).result());
+    }
+
+    @Test void refundRestoresTheDailySlotTheGlobalCountAndTheCooldown() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = limits(c, Map.of());
+        var t = l.record(alice);
+        assertEquals(PrayerLimits.Result.COOLDOWN, l.check(alice, 0).result());
+        assertEquals(1, l.globalToday());
+        l.refund(t);
+        assertEquals(0, l.globalToday());
+        var r = l.check(alice, 0);
+        assertEquals(PrayerLimits.Result.OK, r.result(), "the cooldown from the failed prayer is gone");
+        assertEquals(3, r.remainingToday());
+    }
+
+    @Test void aPlayerWhoseEveryPrayerFailsNeverRunsOut() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = limits(c, Map.of());
+        for (int i = 0; i < 20; i++) {
+            assertEquals(PrayerLimits.Result.OK, l.check(alice, 0).result(), "attempt " + i);
+            l.refund(l.record(alice));
+        }
+        assertEquals(0, l.globalToday());
+    }
+
+    @Test void refundKeepsEarlierSuccessfulPrayersCounted() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = limits(c, Map.of());
+        l.record(alice);                                   // succeeded
+        c.advance(Duration.ofSeconds(10));
+        var failed = l.record(alice);                      // failed
+        l.refund(failed);
+        assertEquals(1, l.globalToday());
+        var r = l.check(alice, 0);
+        assertEquals(PrayerLimits.Result.COOLDOWN, r.result(), "back to the earlier prayer's cooldown");
+        assertEquals(50, r.retrySeconds());
+        assertEquals(2, r.remainingToday());
+    }
+
+    @Test void refundingTwiceOnlyRefundsOnce() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = limits(c, Map.of("prayers.cooldown-seconds", 0));
+        l.record(alice);
+        var t = l.record(alice);
+        l.refund(t);
+        l.refund(t);
+        assertEquals(1, l.globalToday());
+        assertEquals(2, l.check(alice, 0).remainingToday());
+    }
+
+    @Test void refundNeverGoesNegativeAndIgnoresNull() {
+        var l = limits(new TestClock(berlin(2026, 10, 8, 12, 0)), Map.of());
+        assertDoesNotThrow(() -> l.refund(null));
+        assertEquals(0, l.globalToday());
+    }
+
+    @Test void refundAfterMidnightDoesNotTouchTheNewDay() {
+        var c = new TestClock(berlin(2026, 10, 8, 23, 59));
+        var l = limits(c, Map.of("prayers.cooldown-seconds", 0));
+        var t = l.record(alice);                           // counted on 8 Oct
+        c.advance(Duration.ofMinutes(2));                  // now 9 Oct
+        l.record(bob);
+        l.refund(t);
+        assertEquals(1, l.globalToday(), "bob's prayer today is untouched");
+    }
+
+    @Test void refundOnlyAffectsThatPlayer() {
+        var c = new TestClock(berlin(2026, 10, 8, 12, 0));
+        var l = limits(c, Map.of("prayers.cooldown-seconds", 0));
+        l.record(alice);
+        var tb = l.record(bob);
+        l.refund(tb);
+        assertEquals(2, l.check(alice, 0).remainingToday());
+        assertEquals(3, l.check(bob, 0).remainingToday());
     }
 }

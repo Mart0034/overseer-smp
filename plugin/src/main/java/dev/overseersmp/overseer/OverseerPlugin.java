@@ -23,7 +23,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import dev.overseersmp.overseer.decree.DecreeService;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class OverseerPlugin extends JavaPlugin implements Listener {
@@ -37,6 +39,7 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     private final AnthropicClient client = new AnthropicClient();
     private ExecutorService io;
     private PrayerService prayers;
+    private DecreeService decree;
     private Path silenceFlag;
 
     @Override public void onEnable() {
@@ -57,6 +60,8 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
         seedFromDb();
         prayers = new PrayerService(this, io);
         getServer().getPluginManager().registerEvents(this, this);
+        decree = new DecreeService(this, io);
+        decree.start();
         getLogger().info("Enabled. model=" + settings.model + ", API key " + (settings.hasKey() ? "configured" : "MISSING (the Overseer will be silent)")
                 + (settings.silenced ? ", SILENCED" : ""));
     }
@@ -99,23 +104,30 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     }
 
     // ---- accessors for the service
-    Settings settings() { return settings; }
-    ContentFilter contentFilter() { return contentFilter; }
-    InputFilter inputFilter() { return inputFilter; }
-    String persona() { return persona; }
-    Database db() { return db; }
-    PrayerLimits limits() { return limits; }
-    CostTracker cost() { return cost; }
-    AnthropicClient client() { return client; }
-    /** v0.2 will return the active decree; v0.1 has none. */
-    String decreeText() { return ""; }
+    public Settings settings() { return settings; }
+    public ContentFilter contentFilter() { return contentFilter; }
+    public InputFilter inputFilter() { return inputFilter; }
+    public String persona() { return persona; }
+    public Database db() { return db; }
+    public PrayerLimits limits() { return limits; }
+    public CostTracker cost() { return cost; }
+    public AnthropicClient client() { return client; }
+    /** The active decree's text (empty if none), for the prayer prompt. */
+    public String decreeText() { return decree == null ? "" : decree.activeText(); }
 
     // ---- events
     @EventHandler public void onJoin(PlayerJoinEvent e) {
         Player p = e.getPlayer();
         long now = System.currentTimeMillis();
         io.execute(() -> { try { db.touchPlayer(p.getUniqueId(), p.getName(), now); } catch (SQLException ex) { getLogger().warning("DB: " + ex.getMessage()); } });
+        decree.onJoin(p);
         p.sendMessage(Component.text("Pray to the Overseer with /pray <message>. Prayers are public and may appear in our videos.", NamedTextColor.GOLD));
+    }
+
+    @EventHandler public void onDeath(PlayerDeathEvent e) {
+        UUID id = e.getEntity().getUniqueId();
+        long now = System.currentTimeMillis();
+        io.execute(() -> { try { db.logDeath(id, now); } catch (SQLException ex) { getLogger().warning("DB: " + ex.getMessage()); } });
     }
 
     // ---- commands
@@ -130,7 +142,8 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
-        if (cmd.getName().equalsIgnoreCase("overseer") && args.length == 1) return List.of("reload", "stats", "silence", "forcedecree");
+        if (cmd.getName().equalsIgnoreCase("overseer") && args.length == 1) return List.of("reload", "stats", "silence", "forcedecree", "cleardecree", "decree");
+        if (cmd.getName().equalsIgnoreCase("overseer") && args.length >= 2 && args[0].equalsIgnoreCase("forcedecree")) return new java.util.ArrayList<>(decree.registry().keySet());
         return List.of();
     }
 
@@ -140,6 +153,7 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
             case "reload" -> {
                 reloadConfig();
                 load();
+                decree.reloadPrompt();
                 sender.sendMessage("Overseer reloaded. " + settings);
             }
             case "silence" -> {
@@ -151,7 +165,13 @@ public final class OverseerPlugin extends JavaPlugin implements Listener {
                 load();
                 sender.sendMessage("The Overseer is now " + (nowSilent ? "SILENCED (no API calls)." : "listening again."));
             }
-            case "forcedecree" -> sender.sendMessage("Decrees arrive in v0.2.");
+            case "forcedecree" -> {
+                List<String> ids = new java.util.ArrayList<>();
+                for (int i = 1; i < args.length; i++) for (String x : args[i].split(",")) if (!x.isBlank()) ids.add(x);
+                decree.force(ids, sender::sendMessage);
+            }
+            case "cleardecree" -> { decree.clear(); sender.sendMessage("Decree cleared; the world is restored."); }
+            case "decree" -> sender.sendMessage(decree.describeActive());
             default -> {
                 long dayStart = ZonedDateTime.now(PrayerLimits.ZONE).toLocalDate().atStartOfDay(PrayerLimits.ZONE).toInstant().toEpochMilli();
                 io.execute(() -> {
