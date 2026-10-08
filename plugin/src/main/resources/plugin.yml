@@ -1,0 +1,22 @@
+name: Overseer
+version: '${version}'
+main: dev.overseersmp.overseer.OverseerPlugin
+api-version: '26.2'
+description: An AI god rules this world.
+authors: [Overseer]
+commands:
+  pray:
+    description: Speak to the Overseer.
+    usage: /pray <message>
+    permission: overseer.pray
+  overseer:
+    description: Overseer administration.
+    usage: /overseer <reload|stats|silence|forcedecree>
+    permission: overseer.admin
+permissions:
+  overseer.pray:
+    description: Use /pray
+    default: true
+  overseer.admin:
+    description: Administer the Overseer
+    default: op

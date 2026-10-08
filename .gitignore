@@ -11,7 +11,7 @@ __pycache__/
 .venv/
 # jars (egg downloads them from plugins.lock; none are committed)
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
 # generated media
 clips/
 *.mp4

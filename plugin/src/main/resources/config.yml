@@ -1,0 +1,35 @@
+# Overseer configuration. Every limit lives here. The API key is written on the server only (never commit it).
+anthropic:
+  api-key: ""                 # set on the server; never printed or logged
+  model: claude-haiku-5-5
+  api-url: https://api.anthropic.com/v1/messages
+  version: "2023-06-01"
+  max-tokens: 150
+  timeout-seconds: 15
+  structured-output: true     # ask the API to enforce the JSON schema (the plugin still validates everything)
+  monthly-cap-usd: 8.0        # local estimate; the console spend limit is the hard cap
+  price-per-mtok-input: 0.10  # claude-haiku-5-5 list price per million tokens
+  price-per-mtok-output: 0.50
+prayers:
+  max-chars: 200
+  per-player-per-day: 3       # +1 per server-list vote (v0.2)
+  cooldown-seconds: 60
+  server-per-day: 600
+  max-reply-chars: 220
+  history: 3                  # previous prayers included in the prompt
+effects:
+  # Durations in seconds. Clamped in code to hard maximums (300 s bless, 120 s curse, 5 s blindness); you can only lower them.
+  durations-seconds:
+    speed: 120
+    haste: 120
+    regeneration: 30
+    luck: 300
+    night_vision: 300
+    jump_boost: 120
+    slowness: 60
+    hunger: 60
+    mining_fatigue: 60
+    glowing: 60
+    blindness: 5
+filter:
+  extra-words: []             # extra blocked words for prayers and replies
