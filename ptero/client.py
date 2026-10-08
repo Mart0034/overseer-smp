@@ -135,3 +135,20 @@ class Ptero:
 
     def set_var(self, key, value, sid=None):
         return self.api("PUT", sid, "/startup/variable", json={"key": key, "value": value})
+
+    def create_folder(self, root, name, sid=None):
+        return self.api("POST", sid, "/files/create-folder", json={"root": root, "name": name})
+
+    def rename(self, root, pairs, sid=None):
+        """pairs: [(from, to), ...] relative to root; `to` may include a subfolder path."""
+        return self.api("PUT", sid, "/files/rename", json={"root": root, "files": [{"from": a, "to": b} for a, b in pairs]})
+
+    def file_exists(self, directory, name, sid=None):
+        return any(f["attributes"]["name"] == name for f in self.list_files(directory, sid))
+
+    def download(self, path, sid=None):
+        url = self.api("GET", sid, "/files/download", params={"file": path})["attributes"]["url"]
+        r = requests.get(url, timeout=120)
+        if r.status_code >= 400:
+            raise PteroError(f"download failed {r.status_code}")
+        return r.content

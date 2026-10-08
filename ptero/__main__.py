@@ -1,9 +1,105 @@
 """CLI: python -m ptero <command> [args]   (server defaults to the one in PTERO_URL)"""
 import sys
 for _s in (sys.stdout, sys.stderr): _s.reconfigure(encoding="utf-8", errors="replace")
-import argparse, json, subprocess, time
+import argparse, json, re, shutil, subprocess, tempfile, time
 from pathlib import Path
-from .client import ALLOWED_SERVERS, Ptero, PteroError, ROOT
+from .client import ALLOWED_SERVERS, Ptero, PteroError, ROOT, load_env
+
+
+PLUGIN_JAR = "Overseer.jar"
+BACKUP_DIR = "deploy-backup"
+
+
+def wait_backup(c, uuid, sid, timeout=300):
+    t = time.time()
+    while time.time() - t < timeout:
+        for x in c.backups(sid)["data"]:
+            if x["attributes"]["uuid"] == uuid and x["attributes"]["is_successful"]:
+                return True
+        time.sleep(5)
+    return False
+
+
+def healthy(c, version, sid, timeout=90):
+    """Server running AND the log shows this plugin version enabled. Returns (ok, reason)."""
+    t = time.time()
+    while time.time() - t < timeout:
+        time.sleep(4)
+        try:
+            log = c.read_file("/logs/latest.log", sid)
+        except PteroError:
+            continue
+        if "Error occurred while enabling Overseer" in log or "Could not load 'plugins/Overseer" in log:
+            return False, "plugin failed to load/enable"
+        if f"Enabling Overseer v{version}" in log and "[Overseer] Enabled" in log and "Done (" in log:
+            return c.resources(sid)["current_state"] == "running", "enabled"
+    return False, "no healthy log line within %d s" % timeout
+
+
+def deploy(c, jar, sid):
+    """backup -> keep old jar -> upload -> restart -> health check -> rollback if unhealthy."""
+    assert jar.exists(), "jar not found"
+    m = re.match(r"Overseer-(.+)\.jar$", jar.name)
+    version = m.group(1) if m else "?"
+    subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "secret_scan.py"), "all"], check=True)
+    print("backup...")
+    uuid = c.create_backup(f"pre-deploy-{version}-{int(time.time())}", sid)["attributes"]["uuid"]
+    if not wait_backup(c, uuid, sid):
+        print("backup did not complete; aborting deploy"); return 1
+    had_old = c.file_exists("/plugins", PLUGIN_JAR, sid)
+    if had_old:
+        try: c.create_folder("/", BACKUP_DIR, sid)
+        except PteroError: pass
+        c.rename("/plugins", [(PLUGIN_JAR, f"../{BACKUP_DIR}/{PLUGIN_JAR}")], sid)
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d) / PLUGIN_JAR
+        shutil.copy(jar, tmp)
+        c.upload(str(tmp), "/plugins", sid)
+    print("restart...")
+    c.power("restart", sid)
+    ok, why = healthy(c, version, sid)
+    if ok:
+        print(f"deploy ok: Overseer {version} ({why}); backup {uuid}")
+        return 0
+    print(f"UNHEALTHY ({why}); rolling back")
+    c.delete_files("/plugins", [PLUGIN_JAR], sid)
+    if had_old:
+        c.rename(f"/{BACKUP_DIR}", [(PLUGIN_JAR, f"../plugins/{PLUGIN_JAR}")], sid)
+    c.power("restart", sid)
+    print("rolled back; full backup is", uuid)
+    return 2
+
+
+def set_key(c, sid):
+    """Write OVERSEER_API_KEY from .env into plugins/Overseer/config.yml on the server. The key is never printed."""
+    key = load_env().get("OVERSEER_API_KEY", "")
+    if len(key) < 20: sys.exit("OVERSEER_API_KEY missing in .env")
+    path = "/plugins/Overseer/config.yml"
+    cfg = c.read_file(path, sid)
+    new, n = re.subn(r'(?m)^(\s*api-key:\s*)"[^"\n]*"', lambda m: m.group(1) + json.dumps(key), cfg, count=1)
+    if n != 1: sys.exit("could not find api-key line in server config")
+    c.write_file(path, new, sid)
+    c.command("overseer reload", sid)
+    print("API key written to the server config and plugin reloaded (value not shown)")
+
+
+def show_prayers(c, n, sid):
+    """Download the plugin's SQLite log (db + WAL) to a temp dir and print the latest rows."""
+    import sqlite3
+    with tempfile.TemporaryDirectory() as d:
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                (Path(d) / f"overseer.db{suffix}").write_bytes(c.download(f"/plugins/Overseer/overseer.db{suffix}", sid))
+            except PteroError:
+                pass
+        con = sqlite3.connect(str(Path(d) / "overseer.db"))
+        rows = con.execute("SELECT datetime(ts/1000,'unixepoch'), name, prayer, status, action, effect, favor_delta, input_tokens, output_tokens, latency_ms, reply, counted FROM prayers ORDER BY id DESC LIMIT ?", (n,)).fetchall()
+        for r in reversed(rows):
+            print(f"{r[0]} {r[1]}: {r[2]!r}")
+            print(f"   status={r[3]} action={r[4]} effect={r[5]} favor={r[6]} tokens={r[7]}/{r[8]} {r[9]}ms counted={r[11]}")
+            print(f"   reply={r[10]!r}")
+        print(f"({len(rows)} rows)")
+        con.close()
 
 
 def main():
@@ -20,6 +116,8 @@ def main():
     p = sub.add_parser("cat"); p.add_argument("path")
     p = sub.add_parser("put"); p.add_argument("local"); p.add_argument("remote")
     p = sub.add_parser("deploy"); p.add_argument("jar")
+    sub.add_parser("set-key")
+    p = sub.add_parser("prayers"); p.add_argument("n", nargs="?", type=int, default=10)
     a = ap.parse_args()
     c, sid = Ptero(), a.server
     try:
@@ -54,24 +152,12 @@ def main():
         elif a.c == "backup":
             b = c.create_backup(f"manual-{int(time.time())}", sid)
             print("backup started:", b["attributes"]["uuid"])
-        elif a.c == "deploy":  # backup -> upload -> restart -> health check (90 s)
-            jar = Path(a.jar)
-            assert jar.exists(), "jar not found"
-            subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "secret_scan.py"), "all"], check=True)
-            uuid = c.create_backup(f"pre-deploy-{int(time.time())}", sid)["attributes"]["uuid"]
-            for _ in range(60):
-                if any(x["attributes"]["uuid"] == uuid and x["attributes"]["is_successful"] for x in c.backups(sid)["data"]):
-                    break
-                time.sleep(5)
-            else:
-                sys.exit("backup did not complete; aborting deploy")
-            c.upload(str(jar), "/plugins", sid)
-            c.power("restart", sid)
-            time.sleep(10)
-            if c.wait_state("running", sid, 90):
-                print("deploy ok; backup", uuid)
-            else:
-                sys.exit(f"UNHEALTHY after 90 s: restore backup {uuid}")
+        elif a.c == "deploy":
+            sys.exit(deploy(c, Path(a.jar), sid))
+        elif a.c == "prayers":
+            show_prayers(c, a.n, sid)
+        elif a.c == "set-key":
+            set_key(c, sid)
     except PteroError as e:
         sys.exit(f"error: {e}")
 
